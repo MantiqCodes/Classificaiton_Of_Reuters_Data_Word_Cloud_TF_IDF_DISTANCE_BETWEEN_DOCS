@@ -1,0 +1,1395 @@
+---
+title: "Text Mining  Project Using R"
+author: "By Mahbub Islam"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r }
+# Load Libraries
+
+
+library("tm")
+# library("SnowballC")
+library("e1071") # Bayes
+library("wordcloud")
+library("plyr") # rbind
+library("fpc") # plot
+library("RColorBrewer")
+library(cluster) #clustplot
+library(kableExtra)#markdown
+library(ggplot2)
+library(FactoMineR)#PCA
+
+
+options(StringsAsFactor=FALSE)
+```
+# Data Directories:
+## Define directories for Training Data 
+ 
+```{r}
+ 
+trade.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\trade"
+moneyFx.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\money-fx"
+potato.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\potato"
+rice.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\rice"
+wheat.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\wheat"
+rye.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\rye"
+tea.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\tea"
+coffee.train.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\training\\coffee"
+
+```
+## Define test data directories
+
+
+
+```{r}
+trade.test.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\test\\trade"
+moneyFx.test.directory<-"F:/CYTECH_DB_CLASS/BI/Reuters_Dataset/test/money-fx"
+potato.test.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\test\\potato"
+rice.test.directory<-"F:/CYTECH_DB_CLASS/BI/Reuters_Dataset/test/rice"
+wheat.test.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\test\\wheat"
+rye.test.directory<-"F:/CYTECH_DB_CLASS/BI/Reuters_Dataset/test/rye"
+tea.test.directory<-"F:\\CYTECH_DB_CLASS\\BI\\Reuters_Dataset\\test\\tea"
+coffee.test.directory<-"F:/CYTECH_DB_CLASS/BI/Reuters_Dataset/test/coffee"
+
+```
+## Load train data 
+
+```{r}
+
+
+trade.trnCorpus <- VCorpus(DirSource(directory = trade.train.directory, encoding = "ASCII"))
+moneyFx.trnCorpus<-VCorpus(DirSource(directory=moneyFx.train.directory,encoding="ASCII"))
+potato.trnCorpus <- VCorpus(DirSource(directory = potato.train.directory, encoding = "ASCII"))
+rice.trnCorpus<-VCorpus(DirSource(directory=rice.train.directory,encoding="ASCII"))
+wheat.trnCorpus <- VCorpus(DirSource(directory = wheat.train.directory, encoding = "ASCII"))
+rye.trnCorpus<-VCorpus(DirSource(directory=rye.train.directory,encoding="ASCII"))
+tea.trnCorpus <- VCorpus(DirSource(directory = tea.train.directory, encoding = "ASCII"))
+coffee.trnCorpus<-VCorpus(DirSource(directory=coffee.train.directory,encoding="ASCII"))
+
+
+
+``` 
+## Load test data 
+
+```{r}
+
+
+
+trade.testCorpus <- VCorpus(DirSource(directory = trade.test.directory, encoding = "ASCII"))
+moneyFx.testCorpus <-VCorpus(DirSource(directory=moneyFx.test.directory,encoding="ASCII"))
+potato.testCorpus <- VCorpus(DirSource(directory = potato.test.directory, encoding = "ASCII"))
+rice.testCorpus <-VCorpus(DirSource(directory=rice.test.directory,encoding="ASCII"))
+wheat.testCorpus <- VCorpus(DirSource(directory = wheat.test.directory, encoding = "ASCII"))
+rye.testCorpus <-VCorpus(DirSource(directory=rye.test.directory,encoding="ASCII"))
+tea.testCorpus <- VCorpus(DirSource(directory = tea.test.directory, encoding = "ASCII"))
+coffee.testCorpus <-VCorpus(DirSource(directory=coffee.test.directory,encoding="ASCII"))
+
+``` 
+
+# DataCleaing
+
+
+Replace punctuation with a white space
+=======================================
+
+Example: Hyphened words etc. 
+-----------------------------------------------------------
+| original word    | Result of TM's    | Desired result   |
+|                  | removePuntuation()|                  |
+| -----------------| ------------------|------------------|
+| anti-inflation   | antiinflation     | anti inflation   | 
+| farmer-owned     | farmerowned      | farmer owned     | 
+| newly-built      | newlybuilt        | newly built      |
+| year-end         | yearend           | year end         | 
+| state-of-the-art | stateoftheart     | state of the art |
+-----------------------------------------------------------
+
+```{r}
+
+replacePunctBySpace<- content_transformer(function(corpus)
+{
+corpusCleaned<-  gsub('[[:punct:] ]+',' ',corpus);
+return (corpusCleaned)
+})
+```
+
+ Replace  Html Markups with white space : 
+Example: 
+------------------------------------------------------------------------------------------------------------------------------
+|             original input                     | Result of TM's removePuntuation()       |          Desired result         |
+| -----------------------------------------------|---------------------------------- ------|---------------------------------|
+| "<AUTHOR> By William Kazer, Reuters</AUTHOR>"  |  AUTHOR By William Kazer ReutersAUTHOR  |    By William Kazer Reuters     | 
+------------------------------------------------------------------------------------------------------------------------------
+
+
+```{r}
+cleanHtmlTags<-content_transformer(function(corpus)
+  { 
+  corpus<-gsub("<.*?>", " ",corpus) ; 
+  return (corpus)
+  
+  })
+```
+
+Replacing the abbreviations with full form will increase the document similarity in different documents. 
+
+```{r}
+# replace common abbreviations with their full form 
+
+ replaceAbbreviations<-content_transformer( function(corpus)
+{
+  abbr.words<-c("jan","feb","mar","apr","jun","jul","aug","sept","oct","nov","dec", "u.s","eu","eur","dlrs","mln")
+  full.words<-c("january","february","march","april","june","july","august","september",
+                "october","november","december","united states","europe","euro","dollers","million")
+  abbr.map<-setNames(as.list(full.words),abbr.words)
+  for(i in 1:length(abbr.words))
+  {
+    corpus<-gsub(paste0("\\b",abbr.words[i],"\\b" ), abbr.map[[i]], corpus )
+  }
+      return (corpus)
+
+})
+```
+Sometimes tm's stemDocument does not produce desired output. 
+Example: 
+-----------------------------------------------------------
+| original word    | Result of TM's    | Desired result   |
+|                  | stemDocument()    |                  |
+| -----------------| ------------------|------------------|
+|February          |Februari           | February             | 
+| many             | mani              | many             | 
+| united states    | unit states       | united states    |
+| inflation        | infl              | inflat           | 
+| anniversary      | anniversari       | anniversary      |
+-----------------------------------------------------------
+
+Following function will correct it. we can other words if we want to exclude it from stemming or want a modified stemming:
+
+```{r}
+
+unStemed.words<-c("united", "february","many","inflation","states")
+stemed.words<-c("united","february","many","inflate","state")
+stemed.map<-setNames(as.list(unStemed.words),stemed.words)
+
+EXCLUSION_MARK="_EXCUUUUUU"
+ markStemExclusion<- content_transformer(function(corpus){
+
+for(i in 1:length(unStemed.words))
+{
+corpus<-gsub(paste0('\\b',unStemed.words[i],'\\b'),paste0(EXCLUSION_MARK,stemed.words[i],sep="_"),corpus)
+
+}
+
+ return(corpus)
+ })
+
+
+
+```
+
+<!-- Example of EXCLUSION_MARK -->
+```{r}
+
+text<-"united states, on its anniversary , sends millitary on february 28 2022 for training in europe . the inflation is high. many people are at difficulty in the united states  "
+
+for( i in 1:length(unStemed.words))
+{
+  text<-gsub(paste0('\\b',unStemed.words[i],'\\b'),paste0(stemed.words[i],'_EXCLUUU'),text)
+  # 
+  
+}
+
+text
+```
+
+
+
+
+## Clean the EXCLUSION_MARK after applying stemming. 
+
+```{r}
+
+
+
+ unMarkStemExclusion<-content_transformer( function(corpus)
+{
+ corpus<-gsub(EXCLUSION_MARK," ",corpus)
+return (corpus)
+   
+})
+```
+
+
+## A fucntion to clean and stemming corpus
+
+```{r}
+
+cleanData<-function(corpus,excludeStopWords=FALSE)
+{
+# corpus<-tm_map(corpus,removePunctuation)  
+corpus <- tm_map(corpus, removeNumbers)
+corpus<- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus,replaceAbbreviations)
+corpus<-tm_map(corpus,markStemExclusion)
+if(excludeStopWords==FALSE){
+corpus <-tm_map(corpus,removeWords,c(
+                                      "said", "will","next",
+                                     stopwords("english")))}
+corpus<-tm_map(corpus,cleanHtmlTags)
+corpus <- tm_map(corpus, stemDocument)
+
+corpus<-tm_map(corpus,unMarkStemExclusion)
+
+corpus<-tm_map(corpus,replacePunctBySpace)
+corpus<- tm_map(corpus, stripWhitespace)
+return (corpus)
+} 
+```
+
+
+
+## Apply cleanig function to the train data 
+
+```{r}
+trade.trnCleanCorpus <- cleanData(trade.trnCorpus)
+moneyFx.trnCleanCorpus <- cleanData(moneyFx.trnCorpus)
+potato.trnCleanCorpus <- cleanData(potato.trnCorpus)
+rice.trnCleanCorpus <- cleanData(rice.trnCorpus)
+wheat.trnCleanCorpus <- cleanData(wheat.trnCorpus)
+rye.trnCleanCorpus <- cleanData(rye.trnCorpus)
+tea.trnCleanCorpus <- cleanData(tea.trnCorpus)
+coffee.trnCleanCorpus <- cleanData(coffee.trnCorpus)
+
+```
+
+## Apply cleanig function to the test data 
+
+```{r}
+
+```
+
+
+```{r}
+trade.testCleanCorpus <- cleanData(trade.testCorpus)
+moneyFx.testCleanCorpus <- cleanData(moneyFx.testCorpus)
+potato.testCleanCorpus <- cleanData(potato.testCorpus)
+rice.testCleanCorpus <- cleanData(rice.testCorpus)
+wheat.testCleanCorpus <- cleanData(wheat.testCorpus)
+rye.testCleanCorpus <- cleanData(rye.testCorpus)
+tea.testCleanCorpus <- cleanData(tea.testCorpus)
+coffee.testCleanCorpus <- cleanData(coffee.testCorpus)
+```
+
+```{r }
+
+getFewLines<-function(trade.data)
+{
+return (c(
+  trade.data[[1]]$content[3],
+  trade.data[[1]]$content[4],
+  trade.data[[1]]$content[5],
+  trade.data[[1]]$content[6],
+  trade.data[[1]]$content[7],
+  trade.data[[1]]$content[8],
+  trade.data[[1]]$content[9],
+  trade.data[[1]]$content[10]
+))}
+
+
+```
+
+
+## Training data of Trade **before & after cleaing **: 
+```{r}
+print('====================================== before cleaning===============')
+print(getFewLines(trade.trnCorpus))
+print("")
+print('======================================after cleaning===============')
+print(getFewLines(trade.trnCleanCorpus))
+
+```
+
+## And Test data of Trade **before & after cleaing **: 
+```{r}
+print('====================================== before cleaning===============')
+print(getFewLines(trade.testCorpus))
+print("")
+print('======================================after cleaning===============')
+print(getFewLines(trade.testCleanCorpus))
+
+```
+
+
+
+#Data Pre-Processing : Create DTM as a representation of Bag of Words in (vector space)
+
+## Create  Document Term Matrix for training   data
+
+```{r}
+trade.dtm <- DocumentTermMatrix(trade.trnCleanCorpus)
+moneyFx.dtm <- DocumentTermMatrix(moneyFx.trnCleanCorpus)
+potato.dtm <- DocumentTermMatrix(potato.trnCleanCorpus)
+rice.dtm <- DocumentTermMatrix(rice.trnCleanCorpus)
+wheat.dtm <- DocumentTermMatrix(wheat.trnCleanCorpus)
+rye.dtm <- DocumentTermMatrix(rye.trnCleanCorpus)
+tea.dtm <- DocumentTermMatrix(tea.trnCleanCorpus)
+coffee.dtm <- DocumentTermMatrix(coffee.trnCleanCorpus)
+
+```
+## Create  Document Term Matrix for test  data
+
+```{r}
+
+trade.testDtm<-DocumentTermMatrix(trade.testCleanCorpus)
+moneyFx.testDtm<-DocumentTermMatrix(moneyFx.testCleanCorpus)
+potato.testDtm<-DocumentTermMatrix(potato.testCleanCorpus)
+rice.testDtm<-DocumentTermMatrix(rice.testCleanCorpus)
+wheat.testDtm<-DocumentTermMatrix(wheat.testCleanCorpus)
+rye.testDtm<-DocumentTermMatrix(rye.testCleanCorpus)
+tea.testDtm<-DocumentTermMatrix(tea.testCleanCorpus)
+coffee.testDtm<-DocumentTermMatrix(coffee.testCleanCorpus)
+
+```
+# High Dimentionality and high sparsicy of data: 
+
+## Inspect the Document Term Matrix for trade topic's traing data
+
+```{r}
+inspect(trade.dtm)
+
+```
+
+##Sparcity:
+TF:
+It represents how many times a term appears in a particular document. In other words, its known as **Bag of words**. If a term does not appear in a document its corresponding value is zero and thus the sparsity increases.
+
+###Dimensionality and sparsity depend on the number of terms generated from the documents. If we can remove the unnecessary words such as English stop words from the documents ,and see how dimentionality and sparcity changes:  
+
+#### As we can see above,   
+                            -documents: 369, terms: 4827
+                            -Non-/sparse entries: 34844/1746319
+                            -Sparsity           : 98%
+
+#### The more the number of terms , the higher the dimensionality is. So we try to decrease the dimensionaliy by data cleaning , stemming  and applying PCA . #### High dimensionaly increases dramatically for  multi-gram tokenization. Here we are considering uni-gram analysis only.
+
+#### For example, we can see that the number of terms will increase  resulting hihger sparsity, if we do not remove the English stop words:
+
+```{r echo=T}
+tempTradeCleand<-cleanData(trade.trnCorpus,excludeStopWords = TRUE)
+
+tempTradeTdm <- DocumentTermMatrix(tempTradeCleand)
+inspect(tempTradeTdm)
+#previous result: documents: 369, terms: 4827 =>Non-/sparse entries: 34844/1746319
+
+```
+
+
+
+### As we saw, the Dimensionaly and sparsity depends on pre-procesing, for example, n-gram analysis and the removing the unnecessary words from the corpus. Our goal is to keep the dimensionality and sparisity to be as low as possible provided we do not lose the information we need. 
+
+### Remove 70% of the sparse terms in train dataset  
+```{r}
+TRAIN_DEL_SPARSE_PCT=0.7
+trade.dtm<-removeSparseTerms(trade.dtm,TRAIN_DEL_SPARSE_PCT)
+moneyFx.dtm<-removeSparseTerms(moneyFx.dtm,TRAIN_DEL_SPARSE_PCT)
+potato.dtm<-removeSparseTerms(potato.dtm,TRAIN_DEL_SPARSE_PCT)
+rice.dtm<-removeSparseTerms(rice.dtm,TRAIN_DEL_SPARSE_PCT)
+wheat.dtm<-removeSparseTerms(wheat.dtm,TRAIN_DEL_SPARSE_PCT)
+rye.dtm<-removeSparseTerms(rye.dtm,TRAIN_DEL_SPARSE_PCT)
+tea.dtm<-removeSparseTerms(tea.dtm,TRAIN_DEL_SPARSE_PCT)
+coffee.dtm<-removeSparseTerms(coffee.dtm,TRAIN_DEL_SPARSE_PCT)
+
+inspect(trade.dtm)
+```
+###Now the number of terms decresased to 24 and hence the dimensionality is decresaed and the sparcity follows the same improvement, resulting to 55% 
+
+### Remove 70% of the sparse terms in test dataset  
+```{r}
+TEST_DEL_SPARSE_PCT=0.7
+trade.testDtm<-removeSparseTerms(trade.testDtm,TEST_DEL_SPARSE_PCT)
+moneyFx.testDtm<-removeSparseTerms(moneyFx.testDtm,TEST_DEL_SPARSE_PCT)
+potato.testDtm<-removeSparseTerms(potato.testDtm,TEST_DEL_SPARSE_PCT)
+rice.testDtm<-removeSparseTerms(rice.testDtm,TEST_DEL_SPARSE_PCT)
+wheat.testDtm<-removeSparseTerms(wheat.testDtm,TEST_DEL_SPARSE_PCT)
+rye.testDtm<-removeSparseTerms(rye.testDtm,TEST_DEL_SPARSE_PCT)
+tea.testDtm<-removeSparseTerms(tea.testDtm,TEST_DEL_SPARSE_PCT)
+coffee.testDtm<-removeSparseTerms(coffee.testDtm,TEST_DEL_SPARSE_PCT)
+```
+
+
+```{r}
+inspect(trade.testDtm)
+```
+#Data Pre-Processing : Convert the DTM to Data Matrix
+
+
+
+## Convert the Document Term matrix to data matrix for train dataset . : 
+
+```{r}
+
+trade.dataMatrix<-as.matrix(trade.dtm)
+moneyFx.dataMatrix<-as.matrix(moneyFx.dtm)
+potato.dataMatrix<-as.matrix(potato.dtm)
+rice.dataMatrix<-as.matrix(rice.dtm)
+wheat.dataMatrix<-as.matrix(wheat.dtm)
+rye.dataMatrix<-as.matrix(rye.dtm)
+tea.dataMatrix<-as.matrix(tea.dtm)
+coffee.dataMatrix<-as.matrix(coffee.dtm)
+
+```
+## Convert the Document Term matrix to data matrix for test dataset . : 
+
+```{r}
+
+trade.testDataMatrix<-as.matrix(trade.testDtm)
+moneyFx.testDataMatrix<-as.matrix(moneyFx.testDtm)
+potato.testDataMatrix<-as.matrix(potato.testDtm)
+rice.testDataMatrix<-as.matrix(rice.testDtm)
+wheat.testDataMatrix<-as.matrix(wheat.testDtm)
+rye.testDataMatrix<-as.matrix(rye.testDtm)
+tea.testDataMatrix<-as.matrix(tea.testDtm)
+coffee.testDataMatrix<-as.matrix(coffee.testDtm)
+
+```
+# Statistics:  Calculate TF-IDF
+
+### Below I calculated the TF-IDF step by step, as we learned in the class using excel
+
+### Step1 : take a small subset of data:
+
+```{r}
+tData<-trade.dataMatrix [1:10,1:11]
+tData[,order(colSums(tData,na.rm=TRUE),decreasing = T)]
+
+```
+
+### Get Term Frequency function
+
+```{r}
+
+getTF<- function(row)
+{
+  row/sum(row)
+  
+}
+```
+
+# Find TF
+```{r}
+tData.TF<-(apply(tData,1,getTF))
+(tData.TF)
+```
+
+
+
+
+# Find IDF 
+```{r}
+# Define a function to calculate IDF 
+
+getIDF<-function(col)
+{
+  corpus.size<-length(col) # no. of docs  
+  doc.count<- length(which(col>0)) # no of docs containing term
+  log10(corpus.size/doc.count)
+}
+
+tData.IDF<-t(apply(tData,2,getIDF))
+tData.IDF
+
+```
+
+
+ 
+# Finally Get TF-IDF i.e.,  ( TF*IDF)
+```{r}
+
+getTF_IDF<-function(col,idf)
+{
+  idf*col
+}
+
+tData.TF.IDF=apply(tData.TF,2,getTF_IDF,idf=tData.IDF)
+#t(tData.TF.IDF)
+```
+
+
+```{r}
+# Add term names  as row names  
+rowNameList<-rownames(tData.TF)
+rownames(tData.TF.IDF)<-rowNameList
+(tData.TF.IDF)
+```
+
+
+
+
+# Find Document similarity using TF-IDF
+
+### I will implement Cosine and Euclidean formalae
+
+## COSINE SIMILARITY
+### Find dot product of two matrices
+
+```{r}
+
+dot.product<-function(v1,v2)
+{
+  sum(v1*v2)
+}
+```
+### Find determinant of a matrix 
+
+```{r}
+getDeterminant<-function(v)
+{
+ sum(v*v)
+}
+```
+### Fucntion : Find Cosine similarity () , it accepts 2 documents 
+
+
+
+```{r}
+findCosineSimilarity<-function(m1,m2)
+{
+x<-matrix(tData.TF.IDF[,m1:m1],1,length(tData.TF.IDF[,m1:m1]),byrow=FALSE)
+y<-matrix(tData.TF.IDF[,m2:m2],1,length(tData.TF.IDF[,m2:m2]),byrow = FALSE)
+
+xy.dotProd<-apply(x, 1,dot.product,y)
+x.determinant<-getDeterminant(x)
+y.determinant<-getDeterminant(y)
+
+cosTheta<-xy.dotProd/(x.determinant*y.determinant)
+return(cosTheta)
+}
+
+```
+
+
+
+
+## Document similarity using Euclidean Distance
+
+### Fucntion : Find EucledanDistnace() , it accepts 2 documents 
+
+```{r}
+euclidean.distance<-function(v1,v2)
+{
+  sqrt(sum((v1-v2)*(v1-v2)))
+  
+}
+findEuclidianDistance<-function(m1,m2)
+{
+  
+x<-matrix(tData.TF.IDF[,m1:m1],1,length(tData.TF.IDF[,m1:m1]),byrow=FALSE)
+y<-matrix(tData.TF.IDF[,m2:m2],1,length(tData.TF.IDF[,m2:m2]),byrow = FALSE)
+
+apply(x,1,euclidean.distance,y)
+
+}
+```
+### Calculate Cosine similarity of all documents a corpus
+
+```{r}
+getSimilarity<-function(functionName)
+{
+cosSim<-c()
+numCol<-ncol(tData.TF)
+cosSimMat<-matrix(data = NA, nrow =numCol,ncol = numCol  )
+for ( i in (1:numCol))
+{
+  cosSim<-c()
+  for ( j in (1:numCol))
+    {
+    if(functionName=='Cosine')
+    cosSim<-cbind(cosSim,findCosineSimilarity(i,j))
+    else if (functionName=='Euclidean')
+    cosSim<-cbind(cosSim,findEuclidianDistance(i,j))
+    
+  }
+      cosSimMat[i,1:numCol]<-cosSim
+
+}
+colnames(cosSimMat)<-colnames(tData.TF)
+rownames(cosSimMat)<-colnames(tData.TF)
+return (cosSimMat)
+}
+
+```
+
+### Show CosineSimilarty of Training data of Trade corpus:
+
+####In Cosine similarity matrix below, the two documents are more similar if the value is HIGHER 
+#### For Example ,  similarity bwtween document 0000190 and itself has the heighest similarity value in the row. The sencond heighest value is between 0000190  and 0000251 since they are more similar than others. 
+
+```{r}
+getSimilarity( functionName = 'Cosine')
+```
+### Show EuclideanSimilarty of Test Data of Trade Corpus:
+
+#### In Euclidean similarity matrix below, the two documents are more similar if the value is less
+#### For Example ,  similarity bwtween document 0000190  and itself has the LOWEST similarity value in the row. The sencond lowest value is between 0000190 and 0000251  since they are more similar than others. 
+
+```{r}
+getSimilarity( functionName = 'Euclidean')
+
+```
+
+
+# Statistics: WordCloud for train and test data of topics:  **Coffee, Potato & Wheat**
+
+## Create wordCoud for the topic **"coffee"** with its **train** dataset 
+```{r}
+wordcloud(coffee.trnCleanCorpus, max.words = 30, random.order = FALSE, colors = brewer.pal(18, 
+    "Dark2"), scale = c(5, 0.5))
+```
+### Comment: as we see that word cloud has printed the most frequent 20 words which we can find bellow in its **train** data set : 
+```{r}
+coffee.trnFreq<-colSums(as.matrix(coffee.dtm))
+coffee.ord<-order(coffee.trnFreq,decreasing = TRUE)
+coffee.trnFreq[head(coffee.ord,30)]
+```
+
+### Comment: Show the frequency of the words using a barplot 
+```{r}
+wordList<-colSums(coffee.dataMatrix)
+word_sub<-subset(wordList,wordList>5)
+barplot(word_sub,las=3,col=rainbow(20))
+```
+
+
+## Create wordCoud for the topic **"coffee"** with its **test** dataset 
+
+
+
+```{r}
+wordcloud(coffee.testCleanCorpus, max.words = 40, random.order = FALSE, colors = brewer.pal(18, 
+    "Dark2"), scale = c(5, 0.5))
+```
+
+### Comment: as we see that word cloud has printed the most frequent 20 words which we can find bellow in its **test** dataset: 
+```{r}
+coffee.testFreq<-colSums(as.matrix(coffee.testDtm))
+coffee.ord<-order(coffee.testFreq,decreasing = TRUE)
+coffee.testFreq[head(coffee.ord,20)]
+```
+
+
+## Create wordCoud for the topic **"potato"** with its **train** dataset 
+```{r}
+wordcloud(potato.trnCleanCorpus, max.words = 20, random.order = FALSE, colors = brewer.pal(18, 
+    "Dark2"), scale = c(5, 0.5))
+```
+### Comment: as we see that word cloud has printed the most frequent 20 words which we can find bellow in its **train** data set : 
+```{r}
+potato.trnFreq<-colSums(as.matrix(potato.dtm))
+potato.ord<-order(potato.trnFreq,decreasing = TRUE)
+potato.trnFreq[head(potato.ord,20)]
+```
+
+
+## Create wordCoud for the topic **"potato"** with its **test** dataset 
+```{r}
+wordcloud(potato.testCleanCorpus, max.words = 20, random.order = FALSE, colors = brewer.pal(18, 
+    "Dark2"), scale = c(5, 0.5))
+```
+
+### Comment: as we see that word cloud has printed the most frequent 20 words which we can find bellow in its **test** dataset: 
+```{r}
+potato.testFreq<-colSums(as.matrix(potato.testDtm))
+potato.ord<-order(potato.testFreq,decreasing = TRUE)
+potato.testFreq[head(potato.ord,20)]
+```
+
+## Create wordCoud for the topic **"wheat"** with its **train** dataset 
+```{r}
+wordcloud(wheat.trnCleanCorpus, max.words = 20, random.order = FALSE, colors = brewer.pal(18, 
+    "Dark2"), scale = c(5, 0.5))
+```
+### Comment: as we see that word cloud has printed the most frequent 20 words which we can find bellow in its **train** data set : 
+```{r}
+wheat.trnFreq<-colSums(as.matrix(wheat.dtm))
+wheat.ord<-order(wheat.trnFreq,decreasing = TRUE)
+wheat.trnFreq[head(wheat.ord,20)]
+```
+
+## Create wordCoud for the topic **"wheat"** with its **test** dataset 
+```{r}
+wordcloud(wheat.testCleanCorpus, max.words = 20, random.order = FALSE, colors = brewer.pal(18, 
+    "Dark2"), scale = c(5, 0.5))
+```
+
+### Comment: as we see that word cloud has printed the most frequent 20 words which we can find bellow in its **test** dataset: 
+```{r}
+wheat.testFreq<-colSums(as.matrix(wheat.testDtm))
+wheat.ord<-order(wheat.testFreq,decreasing = TRUE)
+wheat.testFreq[head(wheat.ord,20)]
+```
+
+
+
+# Classification 
+
+### Get Dtaframe from dataMatrix for train dataset  
+```{r}
+trade.df<-as.data.frame(trade.dataMatrix)
+moneyFx.df<-as.data.frame(moneyFx.dataMatrix)
+potato.df<-as.data.frame(potato.dataMatrix)
+rice.df<-as.data.frame(rice.dataMatrix)
+wheat.df<-as.data.frame(wheat.dataMatrix)
+rye.df<-as.data.frame(rye.dataMatrix)
+tea.df<-as.data.frame(tea.dataMatrix)
+coffee.df<-as.data.frame(coffee.dataMatrix)
+
+```
+
+### Get Dtaframe from dataMatrix for test dataset  
+```{r}
+trade.testDf<-as.data.frame(trade.testDataMatrix)
+moneyFx.testDf<-as.data.frame(moneyFx.testDataMatrix)
+potato.testDf<-as.data.frame(potato.testDataMatrix)
+rice.testDf<-as.data.frame(rice.testDataMatrix)
+wheat.testDf<-as.data.frame(wheat.testDataMatrix)
+rye.testDf<-as.data.frame(rye.testDataMatrix)
+tea.testDf<-as.data.frame(tea.testDataMatrix)
+coffee.testDf<-as.data.frame(coffee.testDataMatrix)
+```
+### Convert to Matrix 
+```{r}
+trade.dfMat <- as.matrix(trade.df)
+trade.dfMat<-as.data.frame(trade.dataMatrix)
+moneyFx.dfMat<-as.data.frame(moneyFx.dataMatrix)
+potato.dfMat<-as.data.frame(potato.dataMatrix)
+rice.dfMat<-as.data.frame(rice.dataMatrix)
+wheat.dfMat<-as.data.frame(wheat.dataMatrix)
+rye.dfMat<-as.data.frame(rye.dataMatrix)
+tea.dfMat<-as.data.frame(tea.dataMatrix)
+coffee.dfMat<-as.data.frame(coffee.dataMatrix)
+```
+
+
+```{r}
+trade.testDfMat <- as.matrix(trade.testDf)
+
+trade.testDfMat<-as.data.frame(trade.testDataMatrix)
+moneyFx.testDfMat<-as.data.frame(moneyFx.testDataMatrix)
+potato.testDfMat<-as.data.frame(potato.testDataMatrix)
+rice.testDfMat<-as.data.frame(rice.testDataMatrix)
+wheat.testDfMat<-as.data.frame(wheat.testDataMatrix)
+rye.testDfMat<-as.data.frame(rye.testDataMatrix)
+tea.testDfMat<-as.data.frame(tea.testDataMatrix)
+coffee.testDfMat<-as.data.frame(coffee.testDataMatrix)
+
+
+
+```
+
+
+
+### Process train data from both data set 
+```{r}
+## find common columns in both data set 
+getCommonCols<-function(tradeTrain,tradeTest)
+{
+  return ( intersect(colnames(tradeTrain),colnames(tradeTest)))
+}
+
+## find un-common columns from train data 
+getUncommnCols<-function(trainData,testData)
+{
+  ## find common columns in both data set 
+  common<-intersect(colnames(trainData),colnames(testData))
+  # take uncommon columns from the trainData and return
+return (setdiff(colnames(trainData),common))
+}
+```
+
+
+# Combine Train Data for topics Trade and MoneyFX
+
+
+
+
+
+```{r}
+# trade.cat<-"Trade"
+# moneyFx.cat<-"MoneyFx"
+trade.cat=1
+moneyFx.cat=0
+getUncommonColumnsAdded<-function(dfMatTrade,dfMatMoneyFx,categoryName,naVal="NA")
+{
+  # get uncommon columns of moneyFX
+dfMatMoneyFx.uncommon.cols<-  getUncommnCols(dfMatMoneyFx,dfMatTrade)
+# create an empty matrix with uncommon columns of  moneyfx
+dfMatMoneyFx.uncommon.cols.emptyMat<-read.table( textConnection(""),col.names = dfMatMoneyFx.uncommon.cols)
+# add the new empty matrix column wise , to trade.df i,e. tradeDF+monrfx.uncommon.cols
+library(qpcR)
+
+dfMatTrade.final<-qpcR:::cbind.na(dfMatTrade,dfMatMoneyFx.uncommon.cols.emptyMat)
+#add trade category column
+dfMatTrade.final<-cbind(dfMatTrade.final, category=categoryName)
+# impute NA values  with naVal=0
+if(naVal!="NA")
+  dfMatTrade.final[is.na(dfMatTrade.final)]<-naVal
+return (dfMatTrade.final)
+}
+
+```
+
+```{r}
+getCombinedDfMat<-function(tradeDfMat,moneyFxDfMat,tradeCat,moneyCat,naVal)
+{
+trade.dfMat.final<-getUncommonColumnsAdded(tradeDfMat,moneyFxDfMat,categoryName =tradeCat,naVal)
+
+moneyfx.dfMat.final<-getUncommonColumnsAdded(moneyFxDfMat,tradeDfMat,categoryName =moneyCat,naVal)
+ return(rbind(trade.dfMat.final,moneyfx.dfMat.final))
+}
+
+```
+
+
+
+## Get final TestDF = commonColumns of testDF+Zero imputed uncommon columns of trainDF  
+```{r}
+getTestFinal<- function(tradeTrain,tradeTest,fillNa=FALSE)
+{
+# Select the common columns of test data
+common.cols<-intersect(colnames(tradeTrain),colnames(tradeTest))
+tradeTest.final<-tradeTest[,common.cols]
+# find the uncommon columns of train data
+tradeTrain.uncommon.cols<-setdiff(colnames(tradeTrain),common.cols)
+# create an empty matrix with uncommon cols 
+tradeTrain.uncommon.cols.emptyMat<-read.table(textConnection(""),col.names = tradeTrain.uncommon.cols)
+
+# add uncommon columns to selected Test data
+tradeTest.final<-qpcR:::cbind.na(tradeTest.final,tradeTrain.uncommon.cols.emptyMat)
+if(fillNa==TRUE)
+  tradeTest.final[is.na(tradeTest.final)]<-0
+  
+# return final tesdata
+return(tradeTest.final)
+}
+
+```
+
+
+```{r}
+showFirstAndLasFewRows<-function(df, numRows=2,numCols=5)
+{
+  
+# Let's have a look at the combined DF
+numCol<-ncol(df)
+numRow<-nrow(df)
+rbind(df[1:numRows,(numCol-numCols):numCol],
+df[ (numRow-(numRows-1)):numRow,(numCol-numCols):numCol])
+
+}
+```
+
+
+## Final Test Data of both topics 
+```{r}
+trade.testDfMat.final<-getTestFinal(trade.dfMat,trade.testDfMat)
+moneyFx.testDfMat.final<-getTestFinal(moneyFx.dfMat,moneyFx.testDfMat)
+
+
+
+```
+
+
+
+```{r}
+
+# this mehtod will add uncommon columns from combined train final to combined test final : finalTestDfMat
+
+addUncommonColsFromCombinedTrainDfToTestDf<-function(combinedDfMatFinal,combinedTestDfMatFinal)
+{
+
+  uncommonColList<- getUncommnCols(combinedDfMatFinal,combinedTestDfMatFinal) 
+  emptyMat<-read.table(textConnection(""),col.names = uncommonColList)
+  # save category colum of test data 
+  catCol<-combinedTestDfMatFinal[,"category"]
+  # get the list of common columns 
+  commonColList<-getCommonCols(combinedDfMatFinal,combinedTestDfMatFinal)
+  # Exclude category colmumn from common column list 
+  commonColList<-commonColList[-which(commonColList=="category")]
+  # Select only commonColumns from the TEST data 
+  combinedTestDfMatFinal0<-combinedTestDfMatFinal[,commonColList]
+  # add empty mat 
+  combinedTestDfMatFinal0<-qpcR:::cbind.na(combinedTestDfMatFinal0,emptyMat)
+  # impute 0 to NA columns 
+  combinedTestDfMatFinal0[is.na(combinedTestDfMatFinal0)]<-0
+  # Finally add category column and return 
+  combinedTestDfMatFinal0<-cbind(combinedTestDfMatFinal0,category=catCol)
+
+  
+  return(combinedTestDfMatFinal0)
+
+}
+
+```
+# Combine Train data of Trade and MoneyFx 
+```{r}
+##Combine train data of trade and money-fx topics
+combinedDfMat.final<-getCombinedDfMat(trade.dfMat,moneyFx.dfMat,tradeCat = trade.cat, moneyCat = moneyFx.cat,naVal = 0)
+
+```
+
+
+# Combine test data of both topics finally 
+```{r}
+trade.testDfMat.final<-getTestFinal(trade.dfMat,trade.testDfMat,fillNa = TRUE)
+moneyFx.testDfMat.final<-getTestFinal(moneyFx.dfMat,moneyFx.testDfMat,fillNa = TRUE)
+```
+
+
+```{r}
+# combine the test data frames of trade and moneyFx 
+combinedTestDfMat.final<-getCombinedDfMat(trade.testDfMat,moneyFx.testDfMat,tradeCat = trade.cat, moneyCat = moneyFx.cat,naVal = 0)
+combinedTestDfMat.final<-addUncommonColsFromCombinedTrainDfToTestDf(combinedDfMat.final,combinedTestDfMat.final)
+```
+
+
+
+# shuffle data : 
+
+
+```{r}
+set.seed(42)
+combinedDfMat.final<-combinedDfMat.final[sample(1:nrow(combinedDfMat.final)), ]
+combinedTestDfMat.final<-combinedTestDfMat.final[sample(1:nrow(combinedTestDfMat.final)), ]
+```
+
+```{r}
+showFirstAndLasFewRows(combinedDfMat.final)
+```
+
+
+```{r}
+showFirstAndLasFewRows(combinedTestDfMat.final,numCols = 18)
+```
+
+
+```{r}
+minMaxNormelizer<-function(x)
+{
+  (x-min(x))/(max(x)-min(x))
+}
+
+
+
+stdNormalizer<-function(x,doDivide=TRUE)
+{
+if(doDivide)
+   return ( 
+   (x-mean(x))/sqrt(var(x))
+   )
+  return((x-mean(x)))
+}
+```
+
+
+```{r}
+# #==============================================================Show=================
+
+normalizeData<-function(combinedDfMatFinal,divideBySD=TRUE,showSample=FALSE)
+{
+  for( i in (1:(ncol(combinedDfMatFinal)-1)))
+  {
+    combinedDfMatFinal[i]<-stdNormalizer(combinedDfMatFinal[,i:i],doDivide =divideBySD)
+    
+  }
+  if(showSample)
+  showFirstAndLasFewRows(combinedDfMatFinal,numCols = 8)
+  return ( combinedDfMatFinal)
+}
+
+```
+
+
+#Apply Naive Bayes Classifier
+```{r}
+fitNaiveBayesClassifier<-function(combinedDfMatFinal,combinedTestDfMatFinal,Title="Naive Bayes ")
+{
+  cl <- naiveBayes(combinedDfMatFinal$category ~ ., data = combinedDfMatFinal)
+  
+  pred <- predict(cl, newdata = combinedTestDfMatFinal)
+
+conf<-table(pred,combinedTestDfMatFinal$category)
+  #conf<-table(pred,data_test$play)
+  
+  print(paste("Naive Bayes Classifier ",Title))
+  print("ConfusionMatrix:")
+  print(conf)
+  acc <- sum(diag(conf))/sum(conf)
+  
+  print('Accuracy:')
+  acc
+}
+```
+# Try naive Bayes without normalizing data:
+
+```{r}
+fitNaiveBayesClassifier(combinedDfMat.final,combinedTestDfMat.final," Without Normalization")
+
+```
+
+
+
+# Clustering 
+
+# Clustering : KMeans
+
+
+```{r}
+fitKmeansClassifier<-function(combinedDfMatFinal,k=2, title="")
+{
+  
+  
+set.seed(42)
+train.columns<- colnames(combinedDfMatFinal)
+train.catIndex<- which(train.columns=="category")
+train.columns<- train.columns[-train.catIndex]
+train.data<- (combinedDfMatFinal[,train.columns])
+
+kmModel<-kmeans(
+    train.data,
+    k
+     # ,nstart = 25
+    )
+  
+  print(title)
+  print("BetweenSS/TotalSS:")
+  print((kmModel$betweenss/kmModel$totss)[1])
+  
+  conf<-table(kmModel$cluster,combinedDfMatFinal$category)
+  print("Confusion Matrix:")
+  print(conf) 
+  print("Accuracy:")
+  acc<-sum(diag(conf)/sum(conf))
+  print(acc)
+  
+  #++++++++++++++++++++ Graph ++++++++
+  d<-dist(t(train.data))
+
+km<-kmeans(d,k)
+table(km$cluster)
+library("fpc") # plot
+clusplot(as.matrix(d), km$cluster, color=T, shade=T, labels=2, lines=0,main=title)
+
+# plotcluster(train.data,kmeans(train.data,k)$cluster,pointsbyclvecd=TRUE)
+
+ return(kmModel) 
+}
+```
+
+
+
+# Get most frequent term set
+
+```{r}
+# select all columns except category column
+train.columns<- colnames(combinedDfMat.final)
+train.catIndex<- which(train.columns=="category")
+train.columns<- train.columns[-train.catIndex]
+train.data<- (combinedDfMat.final[,train.columns])
+
+# train.data[,order(colSums(train.data,na.rm=TRUE),decreasing = T)]
+
+# A function to get sum columns as the total occurrence count in all documents  for each term
+getTermfrequenctyCountInAllDocs<-function(col)
+{
+  sum(col)
+  
+    }
+train.data.freq<-(apply(train.data,2,getTermfrequenctyCountInAllDocs))
+# sort by decending order
+train.data.freq<-as.matrix(sort(train.data.freq,decreasing = T))
+train.data.freq.sorted<-as.data.frame(t(train.data.freq))
+train.data.freq.sorted
+# select most frequent terms 
+selectCount<-ceiling(80/100*ncol(train.data))
+train.data.most.freq<-train.data.freq.sorted[,1:selectCount]
+train.data.most.freq
+selectedColsNoCat<-colnames(train.data.most.freq)
+# add category column
+selectedCols<-append(selectedColsNoCat,"category")
+```
+
+
+```{r}
+
+kmFit1<-fitKmeansClassifier(combinedDfMat.final[,selectedCols],k=2,title = " KMeans without normalizing Data, k=2")
+```
+
+```{r}
+print("*****************************************************")
+combinedDfMat.final2<-as.data.frame(lapply(combinedDfMat.final,minMaxNormelizer))
+
+kmFit_2<-fitKmeansClassifier(combinedDfMat.final2[,selectedCols],k=2,title = " KMeans with min-max-normalizer , k=2")
+```
+
+
+# Improve clustering by PCA 
+
+```{r}
+
+train.data<-(combinedDfMat.final[,selectedCols])
+
+
+train.pca<-PCA(train.data,ncp = (ncol(train.data)))
+```
+
+
+```{r}
+data.frame(train.pca$eig) 
+
+```
+
+
+```{r}
+# Extract 80% of data 
+kmFitUsingPCA<-function(trainPca,numRow,k=2,combinedDfMatFinal,percentage=80)
+{
+  set.seed(42)
+  train80<- trainPca$ind$coord[,1:numRow]
+  kmFit80<- kmeans(train80,k)
+  conf80<- table(kmFit80$cluster,combinedDfMatFinal$category)
+  acc80<- sum(diag(conf80)/sum(conf80))
+  
+  title<-paste("Apply PCA & Extract",percentage)
+  title<- paste(title,"% data and apply KMeans with k=")
+  title<-paste(title,k)
+  
+  print(title)
+  print("BetweenSS/TotalSS:")
+  print((kmFit80$betweenss/kmFit80$totss)[1])
+  
+  print( conf80)
+  print("Accuracy:")
+
+  print(acc80)
+}
+
+```
+# Improve Kmeans clustering by applying PCA 
+```{r}
+# 81%=14 , 90%=19
+#Result is in Console 
+kmFitUsingPCA(train.pca,numRow = 14,combinedDfMatFinal = combinedDfMat.final,percentage = 81,k = 2)
+```
+
+```{r}
+
+# kmFitUsingPCA(train.pca,numRow = 17,combinedDfMatFinal = combinedDfMat.final,percentage = 80,k = 3)
+# kmFitUsingPCA(train.pca,numRow = 17,combinedDfMatFinal = combinedDfMat.final,percentage = 80,k = 4)
+print("************************************************************")
+kmFitUsingPCA(train.pca,numRow = 19,combinedDfMatFinal = combinedDfMat.final,percentage = 91,k=2)
+# kmFitUsingPCA(train.pca,numRow = 23,combinedDfMatFinal = combinedDfMat.final,percentage = 90,k=3)
+# kmFitUsingPCA(train.pca,numRow = 23,combinedDfMatFinal = combinedDfMat.final,percentage = 90,k=4)
+
+
+```
+# We will extract 80% of the data since 90% of extraction did not improve anything in accuracy .
+
+# Clustering: Get Frequent TermSet using Apriori and apply Entropy / standard opverlap 
+
+
+## Get frequentItem set Using apriori
+```{r}
+
+getFrequentItemSet<-function(t.dataMatrix=trade.dataMatrix)
+{
+library(package = "arules")
+rules = apriori(trade.dataMatrix, parameter = list(minlen=1, sup = 0.1, conf = 0.1))
+print(rules[1])
+itemsets <- unique(generatingItemsets(rules))
+
+itemsets.df <- as(itemsets, "data.frame")
+frequentItemsets <- itemsets.df[with(itemsets.df, order(-support,items)),]
+names(frequentItemsets)[1] <- "Frequent_itemset"
+frequentItemsets
+return (frequentItemsets)
+}
+ getFrequentItemSet(trade.dataMatrix[1:10,])[1:50,]
+```
+
+```{r}
+printLn<-function(strVal,isDebug)
+{
+  if(isDebug)
+  {
+    print(strVal)
+  }
+}
+```
+
+
+# Check if the termset is in the document 
+
+```{r}
+isTermsetInDoc<-function(freq.items,trade.row,debug=F)
+{
+  
+  printLn(freq.items,debug)
+  # find index of non zero elements in the trade.row
+  trade.colIndex<-which(trade.row!=0,arr.ind = TRUE)
+  
+printLn(trade.colIndex,debug)
+    # get the column names of trade.dataMatrix
+  trade.colnames<-colnames(trade.dataMatrix)
+  # mkae a list of freq.itesm
+  freq.items<-substring(freq.items,2,nchar(freq.items)-1)
+  printLn(freq.items,debug)
+  freq.items<-as.list(strsplit(freq.items,","))[[1]]
+  # get the index of freq.items 
+  findex<-match(freq.items,trade.colnames)
+  printLn(freq.items,debug)
+ printLn(findex,debug)
+  # find the match between the index of freq.items and non zero elemnts of trade.row
+  foundMatch<-match(findex,trade.colIndex)
+  naList<-!is.na(foundMatch)
+  printLn(naList,debug)
+  matchCount<-sum(naList)
+  if(matchCount==length(findex))
+    return (TRUE)
+  else return(FALSE)
+  return (FALSE)
+}
+```
+# Get list of documents that contain the freq.items
+
+```{r}
+getDocList<-function(freq.items,dn=nrow(trade.dataMatrix))
+{
+  docList<-list()
+  
+  for ( j in (1:dn))
+  {
+    # item list in trade.datamatrix
+    
+      trade.row<-trade.dataMatrix[j:j,]
+    if(isTermsetInDoc(freq.items,trade.row))
+    {
+      trade.rows<-rownames(trade.dataMatrix) # list of all document numbers 
+        docList<-append(docList,trade.rows[j])
+    }
+  }
+  return (docList)
+}
+```
+# Find document count that has the frequentItemSet 
+
+```{r}
+getCountDf<-function(frequentItemsets=frequentItemsets,trade.dataMatrix=trade.dataMatrix)
+{
+frequentItemsets.copy<-data.frame(frequentItemsets)
+fn<-nrow(frequentItemsets)
+# fn=110
+dn<-nrow(trade.dataMatrix)
+# dn<-3
+# dn=15
+#fi= count of docs having the termset 
+fiDf<-data.frame(termSetId=numeric(),docCount=numeric(),documentSet=character())
+for ( i in (1:fn))
+{
+  freq.items<-frequentItemsets[i:i,1:1]
+  fr.rownames<-rownames(frequentItemsets)
+  fr.RowId<-fr.rownames[i]
+  # list of documents that contain the freq.items
+  docList<-getDocList(freq.items,dn)
+  docListStr<-paste(unlist(docList),collapse=",")
+  fiDf[i,]<-c(as.numeric(fr.RowId),length(docList),docListStr)
+# 
+  }
+return(fiDf)
+}
+```
+
+#Take a subset of the data and apply Apriori
+
+```{r}
+
+t.dataMatrix<-trade.dataMatrix[1:10,]
+
+
+countDf<-getCountDf(getFrequentItemSet(t.dataMatrix),t.dataMatrix)
+countDf[1:10,]
+```
+
+# Find the number of frequentTerms supported by a document 
+
+```{r}
+findFi<-function(docId,countDf)
+{
+  listOfTermsetIds<-list()
+  
+  for( i in (1:nrow(countDf)))
+  {
+    
+  cDf.row<-countDf[i:i,]
+  docs<-as.list(strsplit(countDf[i:i,3:3],","))[[1]]
+  docs<-unique(docs)
+  # strote termSetId in CounDf
+  if(docId%in%docs)
+    listOfTermsetIds<-append(listOfTermsetIds,countDf[i:i,2:2])
+  
+    }
+    
+    
+  
+return (listOfTermsetIds)
+}
+
+```
+
+# Find DocId and its frequentTermset count
+
+```{r}
+findFreqTermCountByDocId<-function(countDf)
+{
+fDf<-data.frame(matrix(nrow = length(rownames(t.dataMatrix)),ncol = 2))
+colnames(fDf)<-c("DocId","frequentTermset count")
+fDf[,1:1]<-rownames(t.dataMatrix)
+i=1
+for( v in (fDf[,1:1]))
+{
+  f<- length(findFi(v,countDf))
+  fDf[i,2:2]<-f
+ i<-i+1
+ }
+  return (fDf)
+}
+
+findFreqTermCountByDocId(countDf)[1:10,]
+```
+
+
+```{r}
+# Implement clustering 
+
+```
+
+
+```{r}
+# Apply standard eq = sum(f-1)/|c|
+
+```
+
+```{r}
+# Apply Entropy eq = sum(-1/f log10(1/f)) 
+
+```
+
